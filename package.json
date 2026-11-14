@@ -1,0 +1,59 @@
+{
+  "name": "@code_shuai/react-native-volcengine-speech",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "react-native": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm run build && node scripts/check-package.cjs",
+    "release:check": "npm run prepublishOnly && npm pack --dry-run --ignore-scripts"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-native": ">=0.83"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3"
+  },
+  "description": "React Native bridge for Volcengine streaming ASR and TTS",
+  "author": "code_shuai",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "files": [
+    "src",
+    "lib",
+    "android/src",
+    "android/build.gradle",
+    "android/consumer-rules.pro",
+    "ios",
+    "*.podspec",
+    "react-native.config.js",
+    "README.md",
+    "docs",
+    "scripts/check-package.cjs"
+  ],
+  "keywords": [
+    "react-native",
+    "volcengine",
+    "doubao",
+    "asr",
+    "tts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuashuai/react-native-volcengine-speech.git"
+  },
+  "homepage": "https://github.com/shuashuai/react-native-volcengine-speech#readme",
+  "bugs": {
+    "url": "https://github.com/shuashuai/react-native-volcengine-speech/issues"
+  }
+}

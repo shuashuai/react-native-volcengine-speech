@@ -1,0 +1,28 @@
+apply plugin: 'com.android.library'
+
+android {
+  namespace 'com.finstao.volcenginespeech'
+  compileSdkVersion rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+
+  defaultConfig {
+    minSdkVersion 24
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+}
+
+repositories {
+  maven {
+    url 'https://artifact.bytedance.com/repository/Volcengine/'
+    content {
+      includeGroup 'com.bytedance.speechengine'
+    }
+  }
+  google()
+  mavenCentral()
+}
+
+dependencies {
+  implementation 'com.facebook.react:react-android'
+  implementation 'com.bytedance.speechengine:speechengine_tob:0.0.15.0'
+  implementation 'com.squareup.okhttp3:okhttp:4.9.1'
+}
