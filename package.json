@@ -1,6 +1,6 @@
 {
   "name": "@code_shuai/react-native-volcengine-speech",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "react-native": "src/index.ts",
@@ -39,7 +39,8 @@
     "react-native.config.js",
     "README.md",
     "docs",
-    "scripts/check-package.cjs"
+    "scripts/check-package.cjs",
+    "scripts/ios-simulator.rb"
   ],
   "keywords": [
     "react-native",

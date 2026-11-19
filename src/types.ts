@@ -1,5 +1,6 @@
-import type { AndroidNativeOptions, IosNativeOptions } from './nativeOptions'
+import type { NativeSpeechConfig } from './config'
 
+export type { AsrConfig, TtsConfig } from './config'
 export type { AndroidNativeOptions, IosNativeOptions } from './nativeOptions'
 
 export type JsonValue =
@@ -36,10 +37,8 @@ export interface TtsTaskPayload extends JsonObject {
   }
 }
 
-export interface SpeechConfig {
-  readonly android?: AndroidNativeOptions
-  readonly ios?: IosNativeOptions
-}
+/** @deprecated Use TtsConfig or AsrConfig for shared initialization options. */
+export type SpeechConfig = NativeSpeechConfig
 
 export type SpeechEventType =
   | 'ready'

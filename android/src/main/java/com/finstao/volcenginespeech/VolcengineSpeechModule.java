@@ -24,9 +24,12 @@ final class VolcengineSpeechModule extends ReactContextBaseJavaModule {
     final boolean tts;
     final SpeechEngine engine;
     Promise start;
+    String sessionPayload;
     boolean started;
     boolean playEnded;
     boolean synthesisEnded;
+    int synthesizedSentences;
+    int playedSentences;
     boolean finishing;
 
     Task(String instanceId, String taskId, boolean tts, SpeechEngine engine, Promise start) {
@@ -114,8 +117,10 @@ final class VolcengineSpeechModule extends ReactContextBaseJavaModule {
       applyOptions(engine, config == null || !config.hasKey("android") ? null : config.getMap("android"));
       engine.setOptionString(PARAMS_KEY_ENGINE_NAME_STRING, tts ? BITTS_ENGINE : ASR_ENGINE);
       if (!tts && payload != null) engine.setOptionString(PARAMS_KEY_ASR_REQ_PARAMS_STRING, json(payload));
-      check(engine.initEngine());
       String input = tts ? json(payload) : "";
+      task.sessionPayload = input;
+      if (tts) engine.setOptionString(PARAMS_KEY_START_ENGINE_PAYLOAD_STRING, input);
+      check(engine.initEngine(), "initEngine");
       engine.setListener((type, data, length) -> {
         String text = data == null ? "" : new String(data, 0,
             Math.max(0, Math.min(length, data.length)), StandardCharsets.UTF_8);
@@ -377,7 +382,7 @@ final class VolcengineSpeechModule extends ReactContextBaseJavaModule {
         case MESSAGE_TYPE_ENGINE_START:
           if (task.tts && !task.started) {
             task.started = true;
-            directive(task, DIRECTIVE_EVENT_START_SESSION, "");
+            directive(task, DIRECTIVE_EVENT_START_SESSION, task.sessionPayload);
           } else if (!task.tts) ready(task, "ready", code, data);
           break;
         case MESSAGE_TYPE_EVENT_SESSION_STARTED: ready(task, "ready", code, data); break;
@@ -386,15 +391,25 @@ final class VolcengineSpeechModule extends ReactContextBaseJavaModule {
         case MESSAGE_TYPE_PARTIAL_RESULT: emit(task, "partialResult", code, data); break;
         case MESSAGE_TYPE_VOLUME_LEVEL: emit(task, "volume", code, data); break;
         case MESSAGE_TYPE_FINAL_RESULT: terminal(task, "finalResult", code, data); break;
-        case MESSAGE_TYPE_TTS_START_PLAYING: emit(task, "playbackStarted", code, data); break;
+        case MESSAGE_TYPE_TTS_START_PLAYING:
+        case MESSAGE_TYPE_PLAYER_START_PLAY_AUDIO:
+          emit(task, "playbackStarted", code, data);
+          break;
         case MESSAGE_TYPE_TTS_FINISH_PLAYING:
           task.playEnded = true;
-          if (task.synthesisEnded) terminal(task, "playbackFinished", code, data);
+          finishPlaybackIfReady(task, code, data);
+          break;
+        case MESSAGE_TYPE_EVENT_TTS_SENTENCE_END:
+          task.synthesizedSentences++;
+          break;
+        case MESSAGE_TYPE_PLAYER_FINISH_PLAY_AUDIO:
+          task.playedSentences++;
+          finishPlaybackIfReady(task, code, data);
           break;
         case MESSAGE_TYPE_EVENT_SESSION_FINISHED:
           task.synthesisEnded = true;
           emit(task, "synthesisFinished", code, data);
-          if (task.playEnded) terminal(task, "playbackFinished", code, data);
+          finishPlaybackIfReady(task, code, data);
           break;
         case MESSAGE_TYPE_ENGINE_STOP:
         case MESSAGE_TYPE_ENGINE_ERROR:
@@ -403,6 +418,14 @@ final class VolcengineSpeechModule extends ReactContextBaseJavaModule {
       }
     } catch (Exception error) {
       terminal(task, "error", code, "");
+    }
+  }
+
+  private void finishPlaybackIfReady(Task task, int code, String data) {
+    // BiTTS reports playback per sentence, even after the session has finished synthesizing.
+    if (task.synthesisEnded && (task.playEnded
+        || (task.playedSentences > 0 && task.playedSentences >= task.synthesizedSentences))) {
+      terminal(task, "playbackFinished", code, data);
     }
   }
 
@@ -445,11 +468,11 @@ final class VolcengineSpeechModule extends ReactContextBaseJavaModule {
   }
 
   private static void directive(Task task, int directive, String data) {
-    check(task.engine.sendDirective(directive, data));
+    check(task.engine.sendDirective(directive, data), "directive " + directive);
   }
 
-  private static void check(int result) {
-    if (result != ERR_NO_ERROR) throw new IllegalStateException("Speech SDK error " + result);
+  private static void check(int result, String operation) {
+    if (result != ERR_NO_ERROR) throw new IllegalStateException("Speech SDK error " + result + " at " + operation);
   }
 
   @Override

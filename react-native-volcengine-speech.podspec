@@ -3,7 +3,7 @@ require 'json'
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 
 Pod::Spec.new do |s|
-  s.name = 'RNVolcengineSpeech'
+  s.name = 'react-native-volcengine-speech'
   s.version = package.fetch('version')
   s.summary = 'React Native bridge for Volcengine Speech SDK'
   s.homepage = 'https://www.volcengine.com/'

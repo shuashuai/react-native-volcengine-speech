@@ -1,4 +1,36 @@
 #import <React/RCTEventEmitter.h>
+#import <TargetConditionals.h>
+
+#if TARGET_OS_SIMULATOR
+
+@interface RNVolcengineSpeech : RCTEventEmitter
+@end
+
+@implementation RNVolcengineSpeech
+RCT_EXPORT_MODULE(RNVolcengineSpeech)
+
++ (BOOL)requiresMainQueueSetup { return NO; }
+
+- (NSDictionary *)constantsToExport {
+  return @{@"isSimulatorStub": @YES};
+}
+
+- (NSArray<NSString *> *)supportedEvents { return @[@"RNVolcengineSpeechEvent"]; }
+
+RCT_EXPORT_METHOD(invoke:(NSString *)operation instanceId:(NSString *)instanceId
+                  taskId:(NSString *)taskId kind:(NSString *)kind payload:(NSDictionary *)payload
+                  config:(NSDictionary *)config resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject) {
+  if ([operation isEqualToString:@"destroy"] || [operation isEqualToString:@"cancel"]) {
+    resolve(nil);
+    return;
+  }
+  reject(@"E_UNSUPPORTED", @"Volcengine Speech requires a physical iOS device", nil);
+}
+@end
+
+#else
+
 #import <SpeechEngineToB/SpeechEngine.h>
 
 static NSDictionary *SpeechOptionDefinitions(void) {
@@ -219,12 +251,15 @@ static NSDictionary *SpeechOptionDefinitions(void) {
 @property(nonatomic, strong) SpeechEngine *engine;
 @property(nonatomic, copy) NSString *instanceId;
 @property(nonatomic, copy) NSString *taskId;
+@property(nonatomic, copy) NSString *sessionPayload;
 @property(nonatomic, copy) RCTPromiseResolveBlock resolve;
 @property(nonatomic, copy) RCTPromiseRejectBlock reject;
 @property(nonatomic) BOOL tts;
 @property(nonatomic) BOOL sessionRequested;
 @property(nonatomic) BOOL finishing;
 @property(nonatomic) BOOL synthesisEnded;
+@property(nonatomic) NSUInteger synthesizedSentences;
+@property(nonatomic) NSUInteger playedSentences;
 @property(nonatomic) BOOL playEnded;
 @end
 
@@ -281,6 +316,14 @@ RCT_EXPORT_MODULE(RNVolcengineSpeech)
   [self emit:task type:type code:code data:data];
 }
 
+- (void)finishPlaybackIfReady:(VolcSpeechTask *)task code:(SEMessageType)code data:(NSString *)data {
+  // BiTTS reports playback per sentence, even after the session has finished synthesizing.
+  if (task.synthesisEnded && (task.playEnded
+      || (task.playedSentences > 0 && task.playedSentences >= task.synthesizedSentences))) {
+    [self terminal:task type:@"playbackFinished" code:code data:data];
+  }
+}
+
 - (void)ready:(VolcSpeechTask *)task code:(NSInteger)code data:(NSString *)data {
   if (!task.resolve) return;
   task.resolve(nil);
@@ -298,7 +341,7 @@ RCT_EXPORT_MODULE(RNVolcengineSpeech)
         [self ready:task code:code data:data];
       } else if (!task.sessionRequested) {
         task.sessionRequested = YES;
-        NSInteger result = [task.engine sendDirective:SEDirectiveEventStartSession data:@""];
+        NSInteger result = [task.engine sendDirective:SEDirectiveEventStartSession data:task.sessionPayload];
         if (result != 0) [self terminal:task type:@"error" code:result data:@""];
       }
       break;
@@ -308,15 +351,25 @@ RCT_EXPORT_MODULE(RNVolcengineSpeech)
     case SEPartialResult: [self emit:task type:@"partialResult" code:code data:data]; break;
     case SEFinalResult: [self terminal:task type:@"finalResult" code:code data:data]; break;
     case SEVolumeLevel: [self emit:task type:@"volume" code:code data:data]; break;
-    case SETtsStartPlaying: [self emit:task type:@"playbackStarted" code:code data:data]; break;
+    case SETtsStartPlaying:
+    case SEPlayerStartPlayAudio:
+      [self emit:task type:@"playbackStarted" code:code data:data];
+      break;
     case SETtsFinishPlaying:
       task.playEnded = YES;
-      if (task.synthesisEnded) [self terminal:task type:@"playbackFinished" code:code data:data];
+      [self finishPlaybackIfReady:task code:code data:data];
+      break;
+    case SEEventTTSSentenceEnd:
+      task.synthesizedSentences++;
+      break;
+    case SEPlayerFinishPlayAudio:
+      task.playedSentences++;
+      [self finishPlaybackIfReady:task code:code data:data];
       break;
     case SEEventSessionFinished:
       task.synthesisEnded = YES;
       [self emit:task type:@"synthesisFinished" code:code data:data];
-      if (task.playEnded) [self terminal:task type:@"playbackFinished" code:code data:data];
+      [self finishPlaybackIfReady:task code:code data:data];
       break;
     case SEEngineStop:
     case SEEngineError:
@@ -399,10 +452,20 @@ static NSString *SpeechJSON(NSDictionary *payload, NSError **error) {
   [task.engine setStringParam:(tts ? SE_BITTS_ENGINE : SE_ASR_ENGINE)
                        forKey:SE_PARAMS_KEY_ENGINE_NAME_STRING];
   if (!tts && payload) [task.engine setStringParam:input forKey:SE_PARAMS_KEY_ASR_REQ_PARAMS_STRING];
+  task.sessionPayload = input;
+  if (tts) {
+    [task.engine setStringParam:input forKey:SE_PARAMS_KEY_START_ENGINE_PAYLOAD_STRING];
+  }
+  NSString *operation = @"initEngine";
   NSInteger result = [task.engine initEngine];
-  if (result == 0) result = [task.engine sendDirective:SEDirectiveStartEngine data:tts ? input : @""];
+  if (result == 0) {
+    operation = @"directive 1000";
+    result = [task.engine sendDirective:SEDirectiveStartEngine data:tts ? input : @""];
+  }
   if (result != 0) {
-    [self terminal:task type:@"error" code:result data:@""];
+    task.reject = nil;
+    [self close:task code:@"E_NATIVE"];
+    reject(@"E_NATIVE", [NSString stringWithFormat:@"Speech SDK error %ld at %@", (long)result, operation], nil);
     return;
   }
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), self.speechQueue, ^{
@@ -463,3 +526,5 @@ RCT_EXPORT_METHOD(invoke:(NSString *)operation instanceId:(NSString *)instanceId
   [super invalidate];
 }
 @end
+
+#endif
