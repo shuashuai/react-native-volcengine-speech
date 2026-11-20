@@ -32,7 +32,25 @@ post_integrate do |installer|
 end
 ```
 
-该配置仅调整模拟器的链接选项。iOS 模拟器中的语音模块会返回 `E_UNSUPPORTED`，豆包 TTS 和 ASR 请使用真机测试。
+该配置仅排除模拟器无法链接的官方二进制库。模拟器 ASR 使用 `AVAudioEngine` 录音并通过豆包官方 WebSocket 协议连接，保持 `createRecognizer/start/finishInput/cancel/destroy` 与结果、音量事件接口一致；iOS 真机仍使用 SpeechEngine。模拟器 TTS 同样通过官方双向流式 WebSocket 合成，使用 `AVAudioEngine/AVAudioPlayerNode` 播放。可通过原生模块常量 `supportsAsr`、`supportsTts` 、`asrImplementation` 和 `ttsImplementation` 区分模拟器能力。
+
+模拟器 ASR 当前支持 API Key 鉴权、`resource_id`、`asr_address`、`asr_uri`、`asr_language`、`enable_get_volume`、`asr_req_params` 及 `start(payload)` 请求参数（含热词/替换词 `corpus`）。仅支持内置录音机，固定输出 16 kHz / 16 bit / 单声道 PCM；其他 SpeechEngine 专属选项不在模拟器适配范围内。`start(payload)` 的字段优先于 `asr_req_params`，二者均作为协议 `request` 对象，不额外套 `request`。模拟器与真机走不同的底层实现，发布前仍需验证真机。
+
+模拟器验证：
+
+1. 配置 Simulator 的音频输入为 Mac 麦克风，允许 Simulator 使用麦克风；App 内仍需申请录音权限。
+2. 正常启动 App 并登录，调用与真机相同的 ASR API。API Key 只从宿主内存传入，不写入源码或日志。
+3. 按住说话，松手调用 `finishInput`；应先收到 `inputEnded`，再收到 `finalResult`。音频结束标志与识别结果完成是不同阶段。
+4. 验证上滑取消、再次开始、网络失败和无录音权限。取消/销毁后旧连接结果不会发送到新任务。
+5. Xcode 控制台筛选 `VolcengineSimulatorAsr`，检查连接、结束输入、最终结果或错误码；日志不包含凭证、识别正文或音频。连接超时 10 秒，提交结束后等待结果最多 15 秒。
+
+模拟器 TTS 保持 `start → appendText（可多次）→ finishInput` 接口，收到音频即开始播放。`synthesisFinished` 代表服务端合成结束；只有最后一段 PCM 的 `DataPlayedBack` 回调完成后才发出 `playbackFinished`。取消/销毁立即停止音频并忽略旧任务回调，与 ASR 共用单任务互斥。
+
+模拟器 TTS 当前支持 API Key、`resource_id`、`tts_address`、`tts_uri`，并透传 `start({ req_params })` 的音色、语速、音量、附加配置等服务端参数。使用内置播放器，音频格式为单声道 16 bit PCM，默认 24 kHz，支持官方列出的采样率；显式请求 MP3/Opus 或关闭内置播放器会返回 `E_UNSUPPORTED`。其他 SpeechEngine 专属选项不在模拟器适配范围内。连接/会话启动超时 15 秒，正在等待读取消息时，60 秒无响应会超时；播放队列积累到约 20 秒时暂停接收，消耗到约 10 秒时恢复，避免长回复因合成快于播放而超限。异常单包/本地待播放缓存硬上限两分钟。
+
+模拟器声音偏小时，先检查 Mac 音量和模拟器自身音量（选中模拟器窗口后按 `⌘↑`，或使用 Device → Sound → Increase Volume）；SDK 不强制改变系统音量。
+
+验证 TTS 时先点播已有回复，确认能出声且读完后动画停止，再验证增量文本播报、播放中停止、重复播放与切换到录音。控制台筛选 `VolcengineSimulatorTts`，应依次看到 `sessionStarted`、`playbackStarted`、`synthesisFinished`、`playbackFinished`；日志不输出朗读正文、音频或密钥。
 
 接入后重新构建 App。ASR 需要宿主申请麦克风权限，iOS 还需提供 `NSMicrophoneUsageDescription`。凭证由宿主注入。
 

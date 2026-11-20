@@ -1,35 +1,8 @@
 #import <React/RCTEventEmitter.h>
 #import <TargetConditionals.h>
 
-#if TARGET_OS_SIMULATOR
+#if !TARGET_OS_SIMULATOR
 
-@interface RNVolcengineSpeech : RCTEventEmitter
-@end
-
-@implementation RNVolcengineSpeech
-RCT_EXPORT_MODULE(RNVolcengineSpeech)
-
-+ (BOOL)requiresMainQueueSetup { return NO; }
-
-- (NSDictionary *)constantsToExport {
-  return @{@"isSimulatorStub": @YES};
-}
-
-- (NSArray<NSString *> *)supportedEvents { return @[@"RNVolcengineSpeechEvent"]; }
-
-RCT_EXPORT_METHOD(invoke:(NSString *)operation instanceId:(NSString *)instanceId
-                  taskId:(NSString *)taskId kind:(NSString *)kind payload:(NSDictionary *)payload
-                  config:(NSDictionary *)config resolve:(RCTPromiseResolveBlock)resolve
-                  reject:(RCTPromiseRejectBlock)reject) {
-  if ([operation isEqualToString:@"destroy"] || [operation isEqualToString:@"cancel"]) {
-    resolve(nil);
-    return;
-  }
-  reject(@"E_UNSUPPORTED", @"Volcengine Speech requires a physical iOS device", nil);
-}
-@end
-
-#else
 
 #import <SpeechEngineToB/SpeechEngine.h>
 
